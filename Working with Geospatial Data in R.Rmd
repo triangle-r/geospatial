@@ -1,0 +1,303 @@
+---
+title: "Working with Geospatial Data in R"
+author: "Ian Cook"
+date: "June 18, 2015"
+output:
+  ioslides_presentation:
+    logo: Triangle-useR_Logo.png
+---
+
+```{r setup, include=FALSE}
+options(width=65)
+```
+
+## Overview
+
+- Bringing Geospatial Tasks into the Analytics Mainstream
+- Geospatial Data Wrangling with R
+- Geospatial Analysis with R
+
+# Bringing Geospatial Tasks into the Analytics Mainstream
+
+## Location data
+
+### Organizations capture vast amounts of location data
+- Facility locations, customers, suppliers, third-party demographic data, etc.
+- ZIP/postal code, address, longitude/latitude
+
+### Location data can have great value if put to productive use
+- Enhancing other data with location data
+- Structuring and combining location data from multiple sources
+- Visualizing data with maps
+
+## Location data
+
+### Taking advantage of location data has been difficult
+- Specialized GIS tools and vendors
+- Specialized technical knowledge
+- Patchy integration with other systems and software
+
+## Location analytics
+
+Increasing recognition of need to bring location data into the mainstream of analytics and data science
+
+- [MIT Sloan Management Review](http://sloanreview.mit.edu/article/location-analytics-bringing-geography-back/)
+
+- [Harvard Business Review](https://hbr.org/2014/03/how-location-analytics-will-transform-retail/)
+
+- [Wired Innovation Insights](http://insights.wired.com/profiles/blogs/location-analytics-where-the-future-will-be)
+
+## Powered by R
+
+> - R provides powerful tools for working with geospatial data
+
+> - R is widely used and widely integrated
+
+> - Many geospatial data manipulation and analysis tasks are within the reach of analysts and data scientists
+
+
+# Geospatial Data Wrangling with R
+
+## Key R packages for geospatial work
+
+Essential packages
+
+- [**sp**](http://cran.r-project.org/package=sp)
+- [**rgdal**](http://cran.r-project.org/package=rgdal)
+
+Other important packages
+
+- [**geosphere**](http://cran.r-project.org/package=geosphere)
+- [**rgeos**](http://cran.r-project.org/package=rgeos)
+- [**maptools**](http://cran.r-project.org/package=maptools)
+
+## Spatial objects and methods
+
+Classes and methods for spatial data are [defined by the package **sp**](http://cran.r-project.org/web/packages/sp/vignettes/intro_sp.pdf)
+
+- SpatialPoints
+- SpatialLines
+- SpatialPolygons
+- SpatialPointsDataFrame
+- SpatialLinesDataFrame
+- SpatialPolygonsDataFrame
+
+## Some common tasks
+
+> - Read and write shapefiles
+> - Plot spatial data
+> - Transform coordinate reference systems
+> - Perform spatial overlay (e.g. geofencing)
+> - Calculate area, perimeter of polygons
+> - Calculate great circle distances
+> - Find unions, intersections, differences of polygons
+
+## Load packages
+
+```{r, message=FALSE}
+library(sp)
+library(rgdal)
+library(geosphere)
+library(rgeos)
+library(maptools)
+```
+
+## Read shapefile to SpatialPolygons object
+
+```{r}
+shpfile <- "planning_neighborhoods/planning_neighborhoods.shp"
+ogrListLayers(shpfile)
+neighborhoods <- readOGR(shpfile, "planning_neighborhoods")
+```
+
+## Examine SpatialPolygons object
+
+```{r}
+class(neighborhoods)
+length(neighborhoods)
+```
+
+## Plot SpatialPolygons object
+
+```{r}
+plot(neighborhoods)
+```
+
+## Transform coordinate reference system
+
+```{r}
+proj4string(neighborhoods)
+bbox(neighborhoods)
+```
+
+## Transform coordinate reference system
+
+See [spatialreference.org](http://spatialreference.org/)
+
+```{r}
+neighborhoods.xf <- spTransform(
+	neighborhoods, 
+	CRS=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+)
+```
+```{r}
+proj4string(neighborhoods.xf)
+bbox(neighborhoods.xf)
+```
+
+## Write shapefile
+
+```{r, eval=FALSE}
+shpfile.xf <- "planning_neighborhoods_wgs84.shp"
+writeOGR(
+  neighborhoods.xf,
+  shpfile.xf,
+  "planning_neighborhoods_wgs84",
+  driver="ESRI Shapefile"
+)
+```
+
+## Read data with longitude and latitute coordinates
+
+```{r}
+restaurants <- read.table(
+	file="San Francisco Restaurants.txt",
+	sep="\t",
+	header=TRUE,
+	stringsAsFactors=FALSE,
+	comment.char="",
+	fill=TRUE,
+	quote=""
+)
+```
+Remove rows with missing coordinates
+```{r}
+location.known <- !is.na(restaurants$longitude) & 
+	!is.na(restaurants$latitude)
+restaurants <- restaurants[location.known, ]
+```
+
+## Examine data
+
+```{r}
+nrow(restaurants)
+head(restaurants, 3)
+```
+
+## Create SpatialPoints object
+
+```{r}
+restaurants.sp <- SpatialPoints(
+	as.matrix(restaurants[, c("longitude","latitude")]), 
+	proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+)
+```
+```{r}
+length(restaurants.sp)
+bbox(restaurants.sp)
+```
+
+## Plot SpatialPoints object
+
+```{r}
+plot(restaurants.sp)
+```
+
+## Spatial overlay
+
+```{r}
+overlay.df <- restaurants.sp %over% neighborhoods.xf
+restaurants$neighborhood <- as.character(overlay.df$neighborho)
+head(restaurants, 3)
+```
+
+## Examine result of spatial overlay
+
+```{r}
+sort(table(restaurants$neighborhood), dec=TRUE)
+```
+
+## Calculate areas of polygons
+
+```{r}
+area <- areaPolygon(neighborhoods.xf) # square meters
+area <- area / 2589988 # square miles
+sum(area)
+names(area) <- neighborhoods.xf@data$neighborho
+sort(area, dec=TRUE)
+```
+
+## Great circle distance
+
+```{r}
+ds <- data.frame(
+	City=c("San Francisco", "New York"),
+	Longitude=c(-122.416700, -74.005900),
+	Latitude=c(37.783300, 40.712700)
+)
+distHaversine(ds[1, 2:3], ds[2, 2:3], r=3963.17)
+```
+
+Argument `r` is the the radius of the earth in the desired units. Use 3963.17 for miles; use 6378137 for meters; use 6378.137 for kilometers.
+
+Also see functions `distCosine`, `distVincentyEllipsoidSphere`, `distVincentyEllipsoid` in package **geosphere**
+
+## Convenience functions
+
+The package **maptools** provides convenience functions for reading and writing shapefiles
+
+```{r}
+nc1 <- readShapePoly(
+	system.file("shapes/sids.shp", package="maptools")[1],
+	proj4string=CRS("+proj=longlat +datum=NAD27")
+)
+```
+
+Also see `writePolyShape`
+
+## 
+
+```{r}
+plot(nc1)
+```
+
+## Union, intersection, difference of polygons
+
+Cut North Carolina into four regions by longitude and take unions of counties in the four regions
+
+```{r}
+lps <- coordinates(nc1)
+ID <- cut(lps[,1], quantile(lps[,1]), include.lowest=TRUE)
+reg4 <- gUnaryUnion(nc1, ID)
+row.names(reg4)
+```
+
+Also see `gUnion`, `gIntersection`, `gDifference` in package **rgeos**
+
+##
+
+```{r}
+plot(reg4)
+```
+
+## Resources
+
+> - [spatialreference.org](http://spatialreference.org/)
+> - [prj2epsg.org](http://prj2epsg.org/)
+> - [QGIS](http://www.qgis.org/)
+> - [Creating maps in R](https://github.com/Robinlovelace/Creating-maps-in-R)
+
+
+# Geospatial Analysis with R
+
+## R packages for geospatial analysis
+
+See [CRAN Task View: Analysis of Spatial Data](http://cran.r-project.org/view=Spatial)
+
+## Thank you
+
+[meetup.com/Triangle-useR](http://meetup.com/Triangle-useR/)
+
+[github.com/TriangleR](https://github.com/TriangleR)
+
+
